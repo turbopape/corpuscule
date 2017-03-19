@@ -117,10 +117,10 @@
       (if (seq rem-annotations)
         (recur (rest rem-annotations)
                (conj result  (let [{:keys [start end name] :as annotation} (first rem-annotations)]
-                               [(subs text
-                                      (Integer/parseInt start)
-                                      (inc (Integer/parseInt  end)))
-                                (clojure.string/lower-case name)])))
+                               [(clojure.string/lower-case (subs text
+                                                                 (Integer/parseInt start)
+                                                                 (inc (Integer/parseInt  end))))
+                                (clojure.string/upper-case name)])))
         result))))
 
 (defn parse-fn-file
@@ -147,7 +147,7 @@
                (let [pos-tags (try  (parse-fn-file (first rem-files))
                                     (catch Exception e []))]
                  (if (not (empty? pos-tags))
-                   (conj result pos-tags)
+                   (into result pos-tags)
                    result)))
         result))))
 
