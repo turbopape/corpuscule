@@ -1,5 +1,6 @@
 (ns corpuscule.core
   (:require [instaparse.core :as insta]
+            [clojure.xml :refer [parse]]
             [clojure.core.match :refer [match]]
             [stemmer.snowball :as snowball]
             [clojure.zip :as z]))
@@ -58,6 +59,8 @@
                         [ (reduce str (butlast toks)) (last toks) ]) w )
                (map (fn [[t d]] [(clojure.string/lower-case t) d]) w)))))
 
+
+
 (defn gen-postagga-corpora
   [fn-parse-annotations resource] ;; parse annotations  : from text -> [["word" V]...] 
    (with-open [rdr (clojure.java.io/reader (clojure.java.io/resource resource))]
@@ -70,8 +73,87 @@
         result))))
 
 
+
+  
+;; fndata-1.7/fulltext/WikiTexts__Fires_1.xml
+
+(defn get-tag
+  [xml-tree tag]
+  (->>  xml-tree 
+        (filter #(= (:tag %) tag))))
+
+(defn get-attr
+  [entries attr]
+  (as-> entries e
+    (filter #(= (get-in % [:attrs :name])
+                attr) e)))
+
+(defn parse-sentence-annotation
+  [annotation sent]
+  {:text  (as->  sent p
+            (:content p)
+            (get-tag p  :text)
+            (first p)
+            (:content p)
+            (first p))
+   :annotations (as-> sent p
+                      (:content p)
+                      (get-tag p :annotationSet)
+                      (map :content p) (mapcat #(get-attr % annotation ) p)
+                      (filter (comp not empty?) p)
+                      (map :content p)
+                      (first p)
+                      (get-tag p :label)
+                      (map :attrs p))})
+
+(def parse-sentence-for-pos
+  (partial parse-sentence-annotation "PENN"))
+
+(defn emit-pos-tags
+  [sent]
+  (let [{:keys [text annotations]} (parse-sentence-for-pos sent)]
+    (loop [rem-annotations annotations
+           result []]
+      (if (seq rem-annotations)
+        (recur (rest rem-annotations)
+               (conj result  (let [{:keys [start end name] :as annotation} (first rem-annotations)]
+                               [(subs text
+                                      (Integer/parseInt start)
+                                      (inc (Integer/parseInt  end)))
+                                (clojure.string/lower-case name)])))
+        result))))
+
+(defn parse-fn-file
+  [file]
+  (let [;xml-file (clojure.java.io/as-file (clojure.java.io/resource resource))
+        
+        xml-tree (xml-seq (parse file))
+        sentences (get-tag xml-tree :sentence)
+        annotated-sents (map emit-pos-tags sentences)]
+    (loop [rem-annos annotated-sents
+           result []]
+      (if (seq rem-annos)
+        (recur (rest rem-annos)
+               (conj result (first  rem-annos)))
+        result))))
+
+(defn parse-fn-resources
+  [folder-resource]
+  (let [folder (clojure.java.io/as-file (clojure.java.io/resource folder-resource))]
+    (loop [rem-files (file-seq folder)
+           result []]
+      (if (seq rem-files)
+        (recur (rest rem-files)
+               (let [pos-tags (try  (parse-fn-file (first rem-files))
+                                    (catch Exception e []))]
+                 (if (not (empty? pos-tags))
+                   (conj result pos-tags)
+                   result)))
+        result))))
+
+
 (def gen-postagga-corpora-from-sequoaia (partial gen-postagga-corpora
-                                                 gen-annotated-seq-sentence))
+                                                   gen-annotated-seq-sentence))
 
 (def gen-postagga-corpora-from-tb (partial gen-postagga-corpora
                                            gen-annotated-tb-sentence ))
